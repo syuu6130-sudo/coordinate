@@ -205,6 +205,9 @@ end
 local axisLinesEnabled = Settings.AxisLines
 local axisLines = {}
 
+-- 軸線の長さ
+local axisLength = 10
+
 local function createAxisLine(color, name)
     local part = Instance.new("Part")
     part.Name = name
@@ -212,7 +215,7 @@ local function createAxisLine(color, name)
     part.CanCollide = false
     part.Material = Enum.Material.Neon
     part.BrickColor = BrickColor.new(color)
-    part.Size = Vector3.new(0.2, 0.2, 10)
+    part.Size = Vector3.new(0.2, 0.2, axisLength)
     part.Parent = workspace
     
     return part
@@ -224,35 +227,44 @@ local function updateAxisLines()
     
     local root = character.HumanoidRootPart
     local position = root.Position
-    local lookVector = root.CFrame.LookVector
-    local rightVector = root.CFrame.RightVector
+    local cframe = root.CFrame
     
-    -- X軸（赤） - 左右方向
+    -- プレイヤーの向いている方向を取得
+    local lookVector = cframe.LookVector
+    local rightVector = cframe.RightVector
+    local upVector = cframe.UpVector
+    
+    -- X軸（赤） - プレイヤーの右方向
     if axisLines["X"] then
-        axisLines["X"].Position = position + rightVector * 5
-        axisLines["X"].CFrame = CFrame.lookAt(
-            position + rightVector * 5,
-            position + rightVector * 10
-        )
+        local xEnd = position + rightVector * axisLength
+        axisLines["X"].CFrame = CFrame.lookAt(position + rightVector * (axisLength/2), xEnd)
     end
     
-    -- Y軸（青） - 上下方向
+    -- Y軸（青） - 上方向
     if axisLines["Y"] then
-        axisLines["Y"].Position = position + Vector3.new(0, 5, 0)
-        axisLines["Y"].CFrame = CFrame.lookAt(
-            position + Vector3.new(0, 5, 0),
-            position + Vector3.new(0, 10, 0)
-        )
+        local yEnd = position + upVector * axisLength
+        axisLines["Y"].CFrame = CFrame.lookAt(position + upVector * (axisLength/2), yEnd)
     end
     
-    -- Z軸（緑） - 前後方向（キャラクターの向いている方向）
+    -- Z軸（緑） - プレイヤーの正面方向
     if axisLines["Z"] then
-        axisLines["Z"].Position = position + lookVector * 5
-        axisLines["Z"].CFrame = CFrame.lookAt(
-            position + lookVector * 5,
-            position + lookVector * 10
-        )
+        local zEnd = position + lookVector * axisLength
+        axisLines["Z"].CFrame = CFrame.lookAt(position + lookVector * (axisLength/2), zEnd)
     end
+end
+
+-- 軸線更新ループ
+local axisUpdateConnection
+local function startAxisUpdateLoop()
+    if axisUpdateConnection then
+        axisUpdateConnection:Disconnect()
+    end
+    
+    axisUpdateConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        if axisLinesEnabled then
+            updateAxisLines()
+        end
+    end)
 end
 
 local function toggleAxisLines()
@@ -262,17 +274,12 @@ local function toggleAxisLines()
     
     if axisLinesEnabled then
         -- 軸線を作成
-        axisLines["X"] = createAxisLine("Bright red", "X_Axis")    -- X軸（赤）- 左右
-        axisLines["Y"] = createAxisLine("Bright blue", "Y_Axis")   -- Y軸（青）- 上下
-        axisLines["Z"] = createAxisLine("Bright green", "Z_Axis")  -- Z軸（緑）- 前後（キャラクターの向き）
+        axisLines["X"] = createAxisLine("Bright red", "X_Axis")    -- X軸（赤）- 右方向
+        axisLines["Y"] = createAxisLine("Bright blue", "Y_Axis")   -- Y軸（青）- 上方向
+        axisLines["Z"] = createAxisLine("Bright green", "Z_Axis")  -- Z軸（緑）- 正面方向
         
         -- 軸線更新ループ開始
-        spawn(function()
-            while axisLinesEnabled do
-                updateAxisLines()
-                wait(0.1)
-            end
-        end)
+        startAxisUpdateLoop()
     else
         -- 軸線を削除
         for _, line in pairs(axisLines) do
@@ -281,6 +288,12 @@ local function toggleAxisLines()
             end
         end
         axisLines = {}
+        
+        -- 更新ループを停止
+        if axisUpdateConnection then
+            axisUpdateConnection:Disconnect()
+            axisUpdateConnection = nil
+        end
     end
 end
 
@@ -304,6 +317,9 @@ game.Players.LocalPlayer.CharacterAdded:Connect(function(character)
         axisLines["X"] = createAxisLine("Bright red", "X_Axis")
         axisLines["Y"] = createAxisLine("Bright blue", "Y_Axis")
         axisLines["Z"] = createAxisLine("Bright green", "Z_Axis")
+        
+        -- 更新ループを再開
+        startAxisUpdateLoop()
     end
 end)
 
