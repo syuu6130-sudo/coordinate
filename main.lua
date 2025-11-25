@@ -1,5 +1,34 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
+-- 設定保存用のテーブル
+local Settings = {
+    CoordinateDisplay = false,
+    CoordinateUpdate = true,
+    AutoTP = false,
+    AxisLines = false,
+    TPCooldown = false
+}
+
+-- 設定を保存する関数
+local function saveSettings()
+    writefile("CoordinateSystem_Settings.txt", game:GetService("HttpService"):JSONEncode(Settings))
+end
+
+-- 設定を読み込む関数
+local function loadSettings()
+    if isfile("CoordinateSystem_Settings.txt") then
+        local success, result = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(readfile("CoordinateSystem_Settings.txt"))
+        end)
+        if success then
+            Settings = result
+        end
+    end
+end
+
+-- 設定を読み込み
+loadSettings()
+
 -- Rayfieldウィンドウを作成
 local Window = Rayfield:CreateWindow({
     Name = "座標表示システム",
@@ -13,15 +42,15 @@ local MainTab = Window:CreateTab("メイン", 4483362458)
 -- 座標表示用のフレーム
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CoordinateDisplay"
-screenGui.ResetOnSpawn = false  -- リスポーン時にリセットされないように
+screenGui.ResetOnSpawn = false
 screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 200, 0, 80)  -- 高さを増やしてTP回数を表示
+frame.Size = UDim2.new(0, 200, 0, 80)
 frame.Position = UDim2.new(1, -210, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 frame.BorderSizePixel = 0
-frame.Visible = false
+frame.Visible = Settings.CoordinateDisplay
 frame.Parent = screenGui
 
 local corner = Instance.new("UICorner")
@@ -84,7 +113,7 @@ game:GetService("UserInputService").InputChanged:Connect(function(input)
 end)
 
 -- 座標更新関数
-local isUpdating = true
+local isUpdating = Settings.CoordinateUpdate
 local function updateCoordinates()
     while isUpdating do
         if frame.Visible then
@@ -99,12 +128,14 @@ local function updateCoordinates()
 end
 
 -- 自動テレポートと重力制御システム
-local autoTPEnabled = false
+local autoTPEnabled = Settings.AutoTP
 local originalGravity = workspace.Gravity
-local reducedGravity = originalGravity * 0.5  -- 0.5倍
+local reducedGravity = originalGravity * 0.5
 local isReducedGravity = false
-local tpCount = 2  -- TP回数のカウンター
-local maxTPCount = 2  -- 最大TP回数
+local tpCount = 2
+local maxTPCount = 2
+local tpCooldown = Settings.TPCooldown
+local lastTPTime = 0
 
 local function updateTPCountDisplay()
     tpCountLabel.Text = "TP残り: " .. tpCount .. "回"
@@ -128,15 +159,22 @@ local function setupAutoTP()
         
         -- Y座標が-22.20より下回った場合かつTP回数が残っている場合
         if currentY < -22.20 and tpCount > 0 then
+            -- クールダウン確認
+            if tpCooldown and (tick() - lastTPTime) < 5 then
+                wait(0.01)
+                continue
+            end
+            
             -- TP回数を減らす
             tpCount = tpCount - 1
             updateTPCountDisplay()
+            lastTPTime = tick()
             
             -- テレポート実行
             local currentPos = humanoidRootPart.Position
             humanoidRootPart.Position = Vector3.new(currentPos.X, 23.23, currentPos.Z)
             
-            -- 重力を0.5倍に設定（浮遊効果）
+            -- 重力を0.5倍に設定
             workspace.Gravity = reducedGravity
             isReducedGravity = true
             
@@ -159,21 +197,22 @@ local function setupAutoTP()
             end)
         end
         
-        wait(0.01) -- 0.01秒ごとに監視
+        wait(0.01)
     end
 end
 
 -- 座標軸表示システム
-local axisLinesEnabled = false
+local axisLinesEnabled = Settings.AxisLines
 local axisLines = {}
 
-local function createAxisLine(color, offset)
+local function createAxisLine(color, name)
     local part = Instance.new("Part")
+    part.Name = name
     part.Anchored = true
     part.CanCollide = false
     part.Material = Enum.Material.Neon
     part.BrickColor = BrickColor.new(color)
-    part.Size = Vector3.new(0.2, 0.2, 10) -- 細長い線
+    part.Size = Vector3.new(0.2, 0.2, 10)
     part.Parent = workspace
     
     return part
@@ -185,13 +224,15 @@ local function updateAxisLines()
     
     local root = character.HumanoidRootPart
     local position = root.Position
+    local lookVector = root.CFrame.LookVector
+    local rightVector = root.CFrame.RightVector
     
     -- X軸（赤） - 左右方向
     if axisLines["X"] then
-        axisLines["X"].Position = position + Vector3.new(5, 0, 0)
+        axisLines["X"].Position = position + rightVector * 5
         axisLines["X"].CFrame = CFrame.lookAt(
-            position + Vector3.new(5, 0, 0),
-            position + Vector3.new(10, 0, 0)
+            position + rightVector * 5,
+            position + rightVector * 10
         )
     end
     
@@ -204,24 +245,26 @@ local function updateAxisLines()
         )
     end
     
-    -- Z軸（緑） - 前後方向
+    -- Z軸（緑） - 前後方向（キャラクターの向いている方向）
     if axisLines["Z"] then
-        axisLines["Z"].Position = position + Vector3.new(0, 0, 5)
+        axisLines["Z"].Position = position + lookVector * 5
         axisLines["Z"].CFrame = CFrame.lookAt(
-            position + Vector3.new(0, 0, 5),
-            position + Vector3.new(0, 0, 10)
+            position + lookVector * 5,
+            position + lookVector * 10
         )
     end
 end
 
 local function toggleAxisLines()
     axisLinesEnabled = not axisLinesEnabled
+    Settings.AxisLines = axisLinesEnabled
+    saveSettings()
     
     if axisLinesEnabled then
         -- 軸線を作成
-        axisLines["X"] = createAxisLine("Bright red", Vector3.new(10, 0, 0))  -- X軸（赤）
-        axisLines["Y"] = createAxisLine("Bright blue", Vector3.new(0, 10, 0)) -- Y軸（青）
-        axisLines["Z"] = createAxisLine("Bright green", Vector3.new(0, 0, 10)) -- Z軸（緑）
+        axisLines["X"] = createAxisLine("Bright red", "X_Axis")    -- X軸（赤）- 左右
+        axisLines["Y"] = createAxisLine("Bright blue", "Y_Axis")   -- Y軸（青）- 上下
+        axisLines["Z"] = createAxisLine("Bright green", "Z_Axis")  -- Z軸（緑）- 前後（キャラクターの向き）
         
         -- 軸線更新ループ開始
         spawn(function()
@@ -244,13 +287,12 @@ end
 -- キャラクターの死亡時やリスポーン時の処理
 game.Players.LocalPlayer.CharacterAdded:Connect(function(character)
     if autoTPEnabled then
-        wait(1) -- キャラクターのロードを待つ
+        wait(1)
         setupAutoTP()
     end
     
     -- 軸線が有効な場合は再設定
     if axisLinesEnabled then
-        -- 既存の軸線をクリア
         for _, line in pairs(axisLines) do
             if line then
                 line:Destroy()
@@ -258,11 +300,10 @@ game.Players.LocalPlayer.CharacterAdded:Connect(function(character)
         end
         axisLines = {}
         
-        -- 新しい軸線を作成
-        wait(1) -- キャラクターのロードを待つ
-        axisLines["X"] = createAxisLine("Bright red", Vector3.new(10, 0, 0))
-        axisLines["Y"] = createAxisLine("Bright blue", Vector3.new(0, 10, 0))
-        axisLines["Z"] = createAxisLine("Bright green", Vector3.new(0, 0, 10))
+        wait(1)
+        axisLines["X"] = createAxisLine("Bright red", "X_Axis")
+        axisLines["Y"] = createAxisLine("Bright blue", "Y_Axis")
+        axisLines["Z"] = createAxisLine("Bright green", "Z_Axis")
     end
 end)
 
@@ -271,6 +312,8 @@ MainTab:CreateButton({
     Name = "座標表示を表示/非表示",
     Callback = function()
         frame.Visible = not frame.Visible
+        Settings.CoordinateDisplay = frame.Visible
+        saveSettings()
         if frame.Visible and isUpdating then
             updateCoordinates()
         end
@@ -280,10 +323,12 @@ MainTab:CreateButton({
 -- 座標固定トグル
 MainTab:CreateToggle({
     Name = "座標更新のオン/オフ",
-    CurrentValue = true,
+    CurrentValue = isUpdating,
     Flag = "CoordinateUpdateToggle",
     Callback = function(value)
         isUpdating = value
+        Settings.CoordinateUpdate = value
+        saveSettings()
         if value and frame.Visible then
             updateCoordinates()
         end
@@ -293,20 +338,20 @@ MainTab:CreateToggle({
 -- 自動テレポートトグル
 MainTab:CreateToggle({
     Name = "自動テレポート機能のオン/オフ",
-    CurrentValue = false,
+    CurrentValue = autoTPEnabled,
     Flag = "AutoTPToggle",
     Callback = function(value)
         autoTPEnabled = value
+        Settings.AutoTP = value
+        saveSettings()
         if value then
-            -- 自動テレポート機能を有効化
-            tpCount = maxTPCount  -- TP回数をリセット
+            tpCount = maxTPCount
             updateTPCountDisplay()
             local character = game.Players.LocalPlayer.Character
             if character then
                 setupAutoTP()
             end
         else
-            -- 自動テレポート機能を無効化、重力を元に戻す
             workspace.Gravity = originalGravity
             isReducedGravity = false
         end
@@ -316,10 +361,22 @@ MainTab:CreateToggle({
 -- 座標軸表示トグル
 MainTab:CreateToggle({
     Name = "座標軸表示のオン/オフ",
-    CurrentValue = false,
+    CurrentValue = axisLinesEnabled,
     Flag = "AxisLinesToggle",
     Callback = function(value)
         toggleAxisLines()
+    end,
+})
+
+-- TPクールダウントグル
+MainTab:CreateToggle({
+    Name = "TPクールダウン(5秒)のオン/オフ",
+    CurrentValue = tpCooldown,
+    Flag = "TPCooldownToggle",
+    Callback = function(value)
+        tpCooldown = value
+        Settings.TPCooldown = value
+        saveSettings()
     end,
 })
 
@@ -368,6 +425,11 @@ spawn(function()
         wait(0.1)
     end
 end)
+
+-- 初期設定の適用
+if axisLinesEnabled then
+    toggleAxisLines()
+end
 
 -- 初期化
 updateTPCountDisplay()
