@@ -13,10 +13,11 @@ local MainTab = Window:CreateTab("メイン", 4483362458)
 -- 座標表示用のフレーム
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CoordinateDisplay"
+screenGui.ResetOnSpawn = false  -- リスポーン時にリセットされないように
 screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 200, 0, 60)
+frame.Size = UDim2.new(0, 200, 0, 80)  -- 高さを増やしてTP回数を表示
 frame.Position = UDim2.new(1, -210, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 frame.BorderSizePixel = 0
@@ -28,13 +29,24 @@ corner.CornerRadius = UDim.new(0, 8)
 corner.Parent = frame
 
 local label = Instance.new("TextLabel")
-label.Size = UDim2.new(1, 0, 1, 0)
+label.Size = UDim2.new(1, 0, 0.6, 0)
 label.BackgroundTransparency = 1
 label.Text = "X: 0, Y: 0, Z: 0"
 label.TextColor3 = Color3.fromRGB(255, 255, 255)
 label.TextScaled = true
 label.Font = Enum.Font.Gotham
 label.Parent = frame
+
+-- TP回数表示用ラベル
+local tpCountLabel = Instance.new("TextLabel")
+tpCountLabel.Size = UDim2.new(1, 0, 0.2, 0)
+tpCountLabel.Position = UDim2.new(0, 0, 0.6, 0)
+tpCountLabel.BackgroundTransparency = 1
+tpCountLabel.Text = "TP残り: 2回"
+tpCountLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+tpCountLabel.TextScaled = true
+tpCountLabel.Font = Enum.Font.Gotham
+tpCountLabel.Parent = frame
 
 -- ドラッグ機能
 local dragInput
@@ -89,8 +101,19 @@ end
 -- 自動テレポートと重力制御システム
 local autoTPEnabled = false
 local originalGravity = workspace.Gravity
-local reducedGravity = originalGravity * 0.3  -- 0.3倍（30%）に修正
+local reducedGravity = originalGravity * 0.5  -- 0.5倍に変更
 local isReducedGravity = false
+local tpCount = 2  -- TP回数のカウンター
+local maxTPCount = 2  -- 最大TP回数
+
+local function updateTPCountDisplay()
+    tpCountLabel.Text = "TP残り: " .. tpCount .. "回"
+    if tpCount <= 0 then
+        tpCountLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    else
+        tpCountLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+end
 
 local function setupAutoTP()
     local character = game.Players.LocalPlayer.Character
@@ -103,13 +126,17 @@ local function setupAutoTP()
     while autoTPEnabled do
         local currentY = humanoidRootPart.Position.Y
         
-        -- Y座標が-22.20より下回った場合
-        if currentY < -22.20 then
+        -- Y座標が-22.20より下回った場合かつTP回数が残っている場合
+        if currentY < -22.20 and tpCount > 0 then
+            -- TP回数を減らす
+            tpCount = tpCount - 1
+            updateTPCountDisplay()
+            
             -- テレポート実行
             local currentPos = humanoidRootPart.Position
             humanoidRootPart.Position = Vector3.new(currentPos.X, 23.23, currentPos.Z)
             
-            -- 重力を0.3倍に設定（浮遊効果）
+            -- 重力を0.5倍に設定（浮遊効果）
             workspace.Gravity = reducedGravity
             isReducedGravity = true
             
@@ -177,6 +204,8 @@ MainTab:CreateToggle({
         autoTPEnabled = value
         if value then
             -- 自動テレポート機能を有効化
+            tpCount = maxTPCount  -- TP回数をリセット
+            updateTPCountDisplay()
             local character = game.Players.LocalPlayer.Character
             if character then
                 setupAutoTP()
@@ -189,10 +218,25 @@ MainTab:CreateToggle({
     end,
 })
 
--- 重力表示ラベル（オプション）
+-- TP回数リセットボタン
+MainTab:CreateButton({
+    Name = "TP回数をリセット",
+    Callback = function()
+        tpCount = maxTPCount
+        updateTPCountDisplay()
+        Rayfield:Notify({
+            Title = "TP回数リセット",
+            Content = "TP回数が" .. maxTPCount .. "回にリセットされました",
+            Duration = 3,
+            Image = 4483362458,
+        })
+    end,
+})
+
+-- 重力表示ラベル
 local gravityLabel = Instance.new("TextLabel")
-gravityLabel.Size = UDim2.new(1, 0, 0, 20)
-gravityLabel.Position = UDim2.new(0, 0, 1, 5)
+gravityLabel.Size = UDim2.new(1, 0, 0.2, 0)
+gravityLabel.Position = UDim2.new(0, 0, 0.8, 0)
 gravityLabel.BackgroundTransparency = 1
 gravityLabel.Text = "重力: 通常"
 gravityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -207,7 +251,7 @@ spawn(function()
         if frame.Visible then
             gravityLabel.Visible = true
             if workspace.Gravity == reducedGravity then
-                gravityLabel.Text = "重力: 0.3倍（浮遊）"
+                gravityLabel.Text = "重力: 0.5倍（浮遊）"
                 gravityLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             else
                 gravityLabel.Text = "重力: 通常"
@@ -221,4 +265,5 @@ spawn(function()
 end)
 
 -- 初期化
+updateTPCountDisplay()
 spawn(updateCoordinates)
