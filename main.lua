@@ -101,7 +101,7 @@ end
 -- 自動テレポートと重力制御システム
 local autoTPEnabled = false
 local originalGravity = workspace.Gravity
-local reducedGravity = originalGravity * 0.5  -- 0.5倍に変更
+local reducedGravity = originalGravity * 0.5  -- 0.5倍
 local isReducedGravity = false
 local tpCount = 2  -- TP回数のカウンター
 local maxTPCount = 2  -- 最大TP回数
@@ -163,11 +163,106 @@ local function setupAutoTP()
     end
 end
 
+-- 座標軸表示システム
+local axisLinesEnabled = false
+local axisLines = {}
+
+local function createAxisLine(color, offset)
+    local part = Instance.new("Part")
+    part.Anchored = true
+    part.CanCollide = false
+    part.Material = Enum.Material.Neon
+    part.BrickColor = BrickColor.new(color)
+    part.Size = Vector3.new(0.2, 0.2, 10) -- 細長い線
+    part.Parent = workspace
+    
+    return part
+end
+
+local function updateAxisLines()
+    local character = game.Players.LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    
+    local root = character.HumanoidRootPart
+    local position = root.Position
+    
+    -- X軸（赤） - 左右方向
+    if axisLines["X"] then
+        axisLines["X"].Position = position + Vector3.new(5, 0, 0)
+        axisLines["X"].CFrame = CFrame.lookAt(
+            position + Vector3.new(5, 0, 0),
+            position + Vector3.new(10, 0, 0)
+        )
+    end
+    
+    -- Y軸（青） - 上下方向
+    if axisLines["Y"] then
+        axisLines["Y"].Position = position + Vector3.new(0, 5, 0)
+        axisLines["Y"].CFrame = CFrame.lookAt(
+            position + Vector3.new(0, 5, 0),
+            position + Vector3.new(0, 10, 0)
+        )
+    end
+    
+    -- Z軸（緑） - 前後方向
+    if axisLines["Z"] then
+        axisLines["Z"].Position = position + Vector3.new(0, 0, 5)
+        axisLines["Z"].CFrame = CFrame.lookAt(
+            position + Vector3.new(0, 0, 5),
+            position + Vector3.new(0, 0, 10)
+        )
+    end
+end
+
+local function toggleAxisLines()
+    axisLinesEnabled = not axisLinesEnabled
+    
+    if axisLinesEnabled then
+        -- 軸線を作成
+        axisLines["X"] = createAxisLine("Bright red", Vector3.new(10, 0, 0))  -- X軸（赤）
+        axisLines["Y"] = createAxisLine("Bright blue", Vector3.new(0, 10, 0)) -- Y軸（青）
+        axisLines["Z"] = createAxisLine("Bright green", Vector3.new(0, 0, 10)) -- Z軸（緑）
+        
+        -- 軸線更新ループ開始
+        spawn(function()
+            while axisLinesEnabled do
+                updateAxisLines()
+                wait(0.1)
+            end
+        end)
+    else
+        -- 軸線を削除
+        for _, line in pairs(axisLines) do
+            if line then
+                line:Destroy()
+            end
+        end
+        axisLines = {}
+    end
+end
+
 -- キャラクターの死亡時やリスポーン時の処理
 game.Players.LocalPlayer.CharacterAdded:Connect(function(character)
     if autoTPEnabled then
         wait(1) -- キャラクターのロードを待つ
         setupAutoTP()
+    end
+    
+    -- 軸線が有効な場合は再設定
+    if axisLinesEnabled then
+        -- 既存の軸線をクリア
+        for _, line in pairs(axisLines) do
+            if line then
+                line:Destroy()
+            end
+        end
+        axisLines = {}
+        
+        -- 新しい軸線を作成
+        wait(1) -- キャラクターのロードを待つ
+        axisLines["X"] = createAxisLine("Bright red", Vector3.new(10, 0, 0))
+        axisLines["Y"] = createAxisLine("Bright blue", Vector3.new(0, 10, 0))
+        axisLines["Z"] = createAxisLine("Bright green", Vector3.new(0, 0, 10))
     end
 end)
 
@@ -215,6 +310,16 @@ MainTab:CreateToggle({
             workspace.Gravity = originalGravity
             isReducedGravity = false
         end
+    end,
+})
+
+-- 座標軸表示トグル
+MainTab:CreateToggle({
+    Name = "座標軸表示のオン/オフ",
+    CurrentValue = false,
+    Flag = "AxisLinesToggle",
+    Callback = function(value)
+        toggleAxisLines()
     end,
 })
 
