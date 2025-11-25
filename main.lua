@@ -5,23 +5,29 @@ local Settings = {
     CoordinateDisplay = false,
     CoordinateUpdate = true,
     AutoTP = false,
+    AxisLines = false,
     UIScale = 1,
-    PositionLocked = false
+    PositionLocked = false,
+    TPCooldown = false
 }
 
 -- 設定を保存する関数
 local function saveSettings()
-    writefile("CoordinateSystem_Settings.txt", game:GetService("HttpService"):JSONEncode(Settings))
+    pcall(function()
+        writefile("CoordinateSystem_Settings.txt", game:GetService("HttpService"):JSONEncode(Settings))
+    end)
 end
 
 -- 設定を読み込む関数
 local function loadSettings()
-    if isfile("CoordinateSystem_Settings.txt") then
+    if pcall(function() return readfile("CoordinateSystem_Settings.txt") end) then
         local success, result = pcall(function()
             return game:GetService("HttpService"):JSONDecode(readfile("CoordinateSystem_Settings.txt"))
         end)
         if success then
-            Settings = result
+            for key, value in pairs(result) do
+                Settings[key] = value
+            end
         end
     end
 end
@@ -38,8 +44,6 @@ local Window = Rayfield:CreateWindow({
 
 -- メインタブを作成
 local MainTab = Window:CreateTab("メイン", 4483362458)
-
--- 設定タブを作成
 local SettingsTab = Window:CreateTab("設定", 4483362458)
 
 -- 座標表示用のフレーム
@@ -50,7 +54,7 @@ screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
 
 -- フレームサイズをスケーラブルに
 local baseWidth = 200
-local baseHeight = 60
+local baseHeight = 80
 local frame = Instance.new("Frame")
 frame.Size = UDim2.new(0, baseWidth * Settings.UIScale, 0, baseHeight * Settings.UIScale)
 frame.Position = UDim2.new(1, -210 * Settings.UIScale, 0, 10 * Settings.UIScale)
@@ -63,8 +67,9 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 8)
 corner.Parent = frame
 
+-- 座標表示ラベル
 local label = Instance.new("TextLabel")
-label.Size = UDim2.new(1, 0, 1, 0)
+label.Size = UDim2.new(1, 0, 0.6, 0)
 label.BackgroundTransparency = 1
 label.Text = "X: 0, Y: 0, Z: 0"
 label.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -72,11 +77,32 @@ label.TextScaled = true
 label.Font = Enum.Font.Gotham
 label.Parent = frame
 
+-- TP状態表示ラベル
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 0.2, 0)
+statusLabel.Position = UDim2.new(0, 0, 0.6, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "TP: 準備完了"
+statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+statusLabel.TextScaled = true
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.Parent = frame
+
+-- 重力表示ラベル
+local gravityLabel = Instance.new("TextLabel")
+gravityLabel.Size = UDim2.new(1, 0, 0.2, 0)
+gravityLabel.Position = UDim2.new(0, 0, 0.8, 0)
+gravityLabel.BackgroundTransparency = 1
+gravityLabel.Text = "状態: 通常"
+gravityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+gravityLabel.TextScaled = true
+gravityLabel.Font = Enum.Font.Gotham
+gravityLabel.Parent = frame
+
 -- UIスケール更新関数
 local function updateUIScale()
     frame.Size = UDim2.new(0, baseWidth * Settings.UIScale, 0, baseHeight * Settings.UIScale)
     frame.Position = UDim2.new(1, -210 * Settings.UIScale, 0, 10 * Settings.UIScale)
-    label.TextSize = 14 * Settings.UIScale
 end
 
 -- ドラッグ機能
@@ -133,6 +159,9 @@ end
 
 -- 自動テレポートシステム
 local autoTPEnabled = Settings.AutoTP
+local originalGravity = workspace.Gravity
+local reducedGravity = originalGravity * 0.5
+local isReducedGravity = false
 local lastTPTime = 0
 local tpCooldown = 1 -- 1秒クールダウン
 
@@ -164,6 +193,32 @@ local function setupAutoTP()
             
             humanoidRootPart.Position = Vector3.new(newX, newY, newZ)
             
+            -- 重力を0.5倍に設定（浮遊効果）
+            workspace.Gravity = reducedGravity
+            isReducedGravity = true
+            statusLabel.Text = "TP: 実行済み"
+            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+            
+            -- 重力監視ループ開始
+            spawn(function()
+                while isReducedGravity and autoTPEnabled do
+                    local newCharacter = game.Players.LocalPlayer.Character
+                    if newCharacter and newCharacter:FindFirstChild("HumanoidRootPart") then
+                        local newY = newCharacter.HumanoidRootPart.Position.Y
+                        
+                        -- Y座標が-7.35に達したら重力を元に戻す
+                        if newY <= -7.35 then
+                            workspace.Gravity = originalGravity
+                            isReducedGravity = false
+                            statusLabel.Text = "TP: 準備完了"
+                            statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                            break
+                        end
+                    end
+                    wait(0.01)
+                end
+            end)
+            
             Rayfield:Notify({
                 Title = "自動テレポート",
                 Content = string.format("Y: %.2f → %.2f", currentY, newY),
@@ -176,11 +231,113 @@ local function setupAutoTP()
     end
 end
 
+-- 座標軸表示システム
+local axisLinesEnabled = Settings.AxisLines
+local axisLines = {}
+local axisLength = 10
+
+local function createAxisLine(color, name)
+    local part = Instance.new("Part")
+    part.Name = name
+    part.Anchored = true
+    part.CanCollide = false
+    part.Material = Enum.Material.Neon
+    part.BrickColor = BrickColor.new(color)
+    part.Size = Vector3.new(0.2, 0.2, axisLength)
+    part.Parent = workspace
+    return part
+end
+
+local function updateAxisLines()
+    local character = game.Players.LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    
+    local root = character.HumanoidRootPart
+    local position = root.Position
+    local cframe = root.CFrame
+    
+    local lookVector = cframe.LookVector
+    local rightVector = cframe.RightVector
+    local upVector = cframe.UpVector
+    
+    -- X軸（赤） - プレイヤーの右方向
+    if axisLines["X"] then
+        local xEnd = position + rightVector * axisLength
+        axisLines["X"].CFrame = CFrame.lookAt(position + rightVector * (axisLength/2), xEnd)
+    end
+    
+    -- Y軸（青） - 上方向
+    if axisLines["Y"] then
+        local yEnd = position + upVector * axisLength
+        axisLines["Y"].CFrame = CFrame.lookAt(position + upVector * (axisLength/2), yEnd)
+    end
+    
+    -- Z軸（緑） - プレイヤーの正面方向
+    if axisLines["Z"] then
+        local zEnd = position + lookVector * axisLength
+        axisLines["Z"].CFrame = CFrame.lookAt(position + lookVector * (axisLength/2), zEnd)
+    end
+end
+
+-- 軸線更新ループ
+local axisUpdateConnection
+local function startAxisUpdateLoop()
+    if axisUpdateConnection then
+        axisUpdateConnection:Disconnect()
+    end
+    
+    axisUpdateConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        if axisLinesEnabled then
+            updateAxisLines()
+        end
+    end)
+end
+
+local function toggleAxisLines()
+    axisLinesEnabled = not axisLinesEnabled
+    Settings.AxisLines = axisLinesEnabled
+    saveSettings()
+    
+    if axisLinesEnabled then
+        axisLines["X"] = createAxisLine("Bright red", "X_Axis")
+        axisLines["Y"] = createAxisLine("Bright blue", "Y_Axis")
+        axisLines["Z"] = createAxisLine("Bright green", "Z_Axis")
+        startAxisUpdateLoop()
+        gravityLabel.Text = "状態: 軸線表示中"
+        gravityLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+    else
+        for _, line in pairs(axisLines) do
+            if line then line:Destroy() end
+        end
+        axisLines = {}
+        
+        if axisUpdateConnection then
+            axisUpdateConnection:Disconnect()
+            axisUpdateConnection = nil
+        end
+        gravityLabel.Text = "状態: 通常"
+        gravityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+end
+
 -- キャラクターの死亡時やリスポーン時の処理
 game.Players.LocalPlayer.CharacterAdded:Connect(function(character)
     if autoTPEnabled then
         wait(1)
         setupAutoTP()
+    end
+    
+    if axisLinesEnabled then
+        for _, line in pairs(axisLines) do
+            if line then line:Destroy() end
+        end
+        axisLines = {}
+        
+        wait(1)
+        axisLines["X"] = createAxisLine("Bright red", "X_Axis")
+        axisLines["Y"] = createAxisLine("Bright blue", "Y_Axis")
+        axisLines["Z"] = createAxisLine("Bright green", "Z_Axis")
+        startAxisUpdateLoop()
     end
 end)
 
@@ -224,7 +381,21 @@ MainTab:CreateToggle({
             if character then
                 setupAutoTP()
             end
+        else
+            workspace.Gravity = originalGravity
+            isReducedGravity = false
+            statusLabel.Text = "TP: 無効"
+            statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
         end
+    end,
+})
+
+MainTab:CreateToggle({
+    Name = "座標軸表示のオン/オフ",
+    CurrentValue = axisLinesEnabled,
+    Flag = "AxisLinesToggle",
+    Callback = function(value)
+        toggleAxisLines()
     end,
 })
 
@@ -250,6 +421,14 @@ SettingsTab:CreateToggle({
     Callback = function(value)
         Settings.PositionLocked = value
         saveSettings()
+        if value then
+            Rayfield:Notify({
+                Title = "位置固定",
+                Content = "座標表示の位置が固定されました",
+                Duration = 2,
+                Image = 4483362458,
+            })
+        end
     end,
 })
 
@@ -260,11 +439,41 @@ SettingsTab:CreateButton({
         Rayfield:Notify({
             Title = "位置リセット",
             Content = "座標表示の位置をリセットしました",
-            Duration = 3,
+            Duration = 2,
             Image = 4483362458,
         })
     end,
 })
+
+SettingsTab:CreateToggle({
+    Name = "TPクールダウン(1秒)のオン/オフ",
+    CurrentValue = Settings.TPCooldown,
+    Flag = "TPCooldownToggle",
+    Callback = function(value)
+        Settings.TPCooldown = value
+        tpCooldown = value and 1 or 0
+        saveSettings()
+    end,
+})
+
+-- 重力状態監視
+spawn(function()
+    while true do
+        if frame.Visible then
+            if workspace.Gravity == reducedGravity then
+                gravityLabel.Text = "状態: 浮遊中(0.5G)"
+                gravityLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+            elseif axisLinesEnabled then
+                gravityLabel.Text = "状態: 軸線表示中"
+                gravityLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+            else
+                gravityLabel.Text = "状態: 通常"
+                gravityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            end
+        end
+        wait(0.1)
+    end
+end)
 
 -- 初期設定の適用
 if Settings.CoordinateDisplay then
@@ -278,7 +487,20 @@ if Settings.AutoTP then
     end
 end
 
+if Settings.AxisLines then
+    toggleAxisLines()
+end
+
 updateUIScale()
 
 -- 初期化
 spawn(updateCoordinates)
+
+-- 初期状態設定
+if autoTPEnabled then
+    statusLabel.Text = "TP: 監視中"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+else
+    statusLabel.Text = "TP: 無効"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+end
