@@ -89,8 +89,8 @@ end
 -- 自動テレポートと重力制御システム
 local autoTPEnabled = false
 local originalGravity = workspace.Gravity
-local doubleGravity = originalGravity * 2
-local isDoubleGravity = false
+local reducedGravity = originalGravity * 0.3  -- 0.3倍（30%）に修正
+local isReducedGravity = false
 
 local function setupAutoTP()
     local character = game.Players.LocalPlayer.Character
@@ -109,13 +109,13 @@ local function setupAutoTP()
             local currentPos = humanoidRootPart.Position
             humanoidRootPart.Position = Vector3.new(currentPos.X, 23.23, currentPos.Z)
             
-            -- 重力を2倍に設定
-            workspace.Gravity = doubleGravity
-            isDoubleGravity = true
+            -- 重力を0.3倍に設定（浮遊効果）
+            workspace.Gravity = reducedGravity
+            isReducedGravity = true
             
             -- 重力監視ループ開始
             spawn(function()
-                while isDoubleGravity and autoTPEnabled do
+                while isReducedGravity and autoTPEnabled do
                     local newCharacter = game.Players.LocalPlayer.Character
                     if newCharacter and newCharacter:FindFirstChild("HumanoidRootPart") then
                         local newY = newCharacter.HumanoidRootPart.Position.Y
@@ -123,7 +123,7 @@ local function setupAutoTP()
                         -- Y座標が-7.35に達したら重力を元に戻す
                         if newY <= -7.35 then
                             workspace.Gravity = originalGravity
-                            isDoubleGravity = false
+                            isReducedGravity = false
                             break
                         end
                     end
@@ -184,7 +184,7 @@ MainTab:CreateToggle({
         else
             -- 自動テレポート機能を無効化、重力を元に戻す
             workspace.Gravity = originalGravity
-            isDoubleGravity = false
+            isReducedGravity = false
         end
     end,
 })
@@ -206,9 +206,9 @@ spawn(function()
     while true do
         if frame.Visible then
             gravityLabel.Visible = true
-            if workspace.Gravity == doubleGravity then
-                gravityLabel.Text = "重力: 2倍"
-                gravityLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            if workspace.Gravity == reducedGravity then
+                gravityLabel.Text = "重力: 0.3倍（浮遊）"
+                gravityLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             else
                 gravityLabel.Text = "重力: 通常"
                 gravityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
