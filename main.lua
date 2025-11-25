@@ -86,6 +86,64 @@ local function updateCoordinates()
     end
 end
 
+-- 自動テレポートと重力制御システム
+local autoTPEnabled = false
+local originalGravity = workspace.Gravity
+local doubleGravity = originalGravity * 2
+local isDoubleGravity = false
+
+local function setupAutoTP()
+    local character = game.Players.LocalPlayer.Character
+    if not character then return end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+    
+    -- Y座標監視ループ
+    while autoTPEnabled do
+        local currentY = humanoidRootPart.Position.Y
+        
+        -- Y座標が-22.20より下回った場合
+        if currentY < -22.20 then
+            -- テレポート実行
+            local currentPos = humanoidRootPart.Position
+            humanoidRootPart.Position = Vector3.new(currentPos.X, 23.23, currentPos.Z)
+            
+            -- 重力を2倍に設定
+            workspace.Gravity = doubleGravity
+            isDoubleGravity = true
+            
+            -- 重力監視ループ開始
+            spawn(function()
+                while isDoubleGravity and autoTPEnabled do
+                    local newCharacter = game.Players.LocalPlayer.Character
+                    if newCharacter and newCharacter:FindFirstChild("HumanoidRootPart") then
+                        local newY = newCharacter.HumanoidRootPart.Position.Y
+                        
+                        -- Y座標が-7.35に達したら重力を元に戻す
+                        if newY <= -7.35 then
+                            workspace.Gravity = originalGravity
+                            isDoubleGravity = false
+                            break
+                        end
+                    end
+                    wait(0.01)
+                end
+            end)
+        end
+        
+        wait(0.01) -- 0.01秒ごとに監視
+    end
+end
+
+-- キャラクターの死亡時やリスポーン時の処理
+game.Players.LocalPlayer.CharacterAdded:Connect(function(character)
+    if autoTPEnabled then
+        wait(1) -- キャラクターのロードを待つ
+        setupAutoTP()
+    end
+end)
+
 -- 座標表示ボタン
 MainTab:CreateButton({
     Name = "座標表示を表示/非表示",
@@ -109,6 +167,58 @@ MainTab:CreateToggle({
         end
     end,
 })
+
+-- 自動テレポートトグル
+MainTab:CreateToggle({
+    Name = "自動テレポート機能のオン/オフ",
+    CurrentValue = false,
+    Flag = "AutoTPToggle",
+    Callback = function(value)
+        autoTPEnabled = value
+        if value then
+            -- 自動テレポート機能を有効化
+            local character = game.Players.LocalPlayer.Character
+            if character then
+                setupAutoTP()
+            end
+        else
+            -- 自動テレポート機能を無効化、重力を元に戻す
+            workspace.Gravity = originalGravity
+            isDoubleGravity = false
+        end
+    end,
+})
+
+-- 重力表示ラベル（オプション）
+local gravityLabel = Instance.new("TextLabel")
+gravityLabel.Size = UDim2.new(1, 0, 0, 20)
+gravityLabel.Position = UDim2.new(0, 0, 1, 5)
+gravityLabel.BackgroundTransparency = 1
+gravityLabel.Text = "重力: 通常"
+gravityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+gravityLabel.TextScaled = true
+gravityLabel.Font = Enum.Font.Gotham
+gravityLabel.Visible = false
+gravityLabel.Parent = frame
+
+-- 重力状態監視
+spawn(function()
+    while true do
+        if frame.Visible then
+            gravityLabel.Visible = true
+            if workspace.Gravity == doubleGravity then
+                gravityLabel.Text = "重力: 2倍"
+                gravityLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            else
+                gravityLabel.Text = "重力: 通常"
+                gravityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            end
+        else
+            gravityLabel.Visible = false
+        end
+        wait(0.1)
+    end
+end)
 
 -- 初期化
 spawn(updateCoordinates)
